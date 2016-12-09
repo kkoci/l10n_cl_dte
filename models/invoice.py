@@ -827,6 +827,16 @@ www.sii.cl'''.format(folio, folio_inicial, folio_final)
             return True
         return False
 
+    def _is_export(self):
+        if self.sii_document_class_id.sii_code in [110, 111, 112]:
+            return True
+        return False
+
+    def _is_liquidacion(self):
+        if self.sii_document_class_id.sii_code in [43]:
+            return True
+        return False
+
     def _giros_emisor(self):
         giros_emisor = []
         for turn in self.company_id.company_activities_ids:
@@ -842,6 +852,29 @@ www.sii.cl'''.format(folio, folio_inicial, folio_final)
             IdDoc['IndServicio'] = 3 #@TODO agregar las otras opciones a la fichade producto servicio
         if self.ticket:
             IdDoc['TpoImpresion'] = "T"
+        if self._is_export():
+            IdDoc['TipoDespacho'] = self.account_invoice.despacho_tipo
+            IdDoc['IndServicio']  = 3
+            IdDoc['FmaPagExp'] = self.account_invoice.payment_forma
+            IdDoc['FchCancel'] = self.account_invoice.fecha_cancelacion
+            IdDoc['MntCancel'] = self.account_invoice.monto_cancelado
+            IdDoc['SaldoInsol'] = self.account_invoice.saldo_insoluto
+            #IdDoc['MntPagos'] = self.account_invoice    #Ésto se supone que es una tabla dentro de IdDoc
+            IdDoc['FchPago'] = self.account_invoice.fecha_pago      #Pertenece tabla
+            IdDoc['MntPago'] = self.account_invoice.monto_pago      #Pertenece tabla
+            IdDoc['GlosaPagos'] = self.account_invoice.glosa    or ''  #Pertenece tabla
+            IdDoc['PeriodoDesde'] = self.account_invoice.periodo_desde or ''
+            IdDoc['PeriodoHasta'] = self.account_invoice.periodo_hasta or ''
+            IdDoc['MedioPago'] = self.account_invoice.medio_pago
+            IdDoc['TpoCtaPago'] = self.account_invoice.tipo_cuenta_pago
+            IdDoc['NumCtaPago'] = self.account_invoice.numero_cta_pago
+            IdDoc['BcoPago'] = self.account_invoice.banco_pago
+            IdDoc['TermPagoCdg'] = self.account_invoice.termino_de_pago
+            IdDoc['TermPagoGlosa'] = self.account_invoice.termino_pago_glosa
+            IdDoc['TermPagoDias'] = self.account_invoice.dias_termino_pago
+            IdDoc['FchVenc'] = self.account_invoice.fecha_vencimiento
+            #IdDoc['']
+            #IdDoc['']
         #if self.tipo_servicio:
         #    Encabezado['IdDoc']['IndServicio'] = 1,2,3,4
         # todo: forma de pago y fecha de vencimiento - opcional
@@ -865,6 +898,9 @@ www.sii.cl'''.format(folio, folio_inicial, folio_final)
         if self._es_boleta():
             Emisor['RznSocEmisor'] = self.company_id.partner_id.name
             Emisor['GiroEmisor'] = self._acortar_str(self.company_id.activity_description.name, 80)
+        elif self._is_export():
+            Emisor['CdgVendedor'] = self.res_partner.codigo_vendedor or ''
+            Emisor['IdAdicEmisor'] = self.res_partner.identificacion_adicional_vendedor or ''
         else:
             Emisor['RznSoc'] = self.company_id.partner_id.name
             Emisor['GiroEmis'] = self._acortar_str(self.company_id.activity_description.name, 80)
@@ -885,8 +921,13 @@ www.sii.cl'''.format(folio, folio_inicial, folio_final)
             raise UserError("Debe Ingresar RUT Receptor")
         #if self._es_boleta():
         #    Receptor['CdgIntRecep']
-        Receptor['RUTRecep'] = self.format_vat(self.partner_id.vat)
-        Receptor['RznSocRecep'] = self._acortar_str(self.partner_id.name, 100)
+        if self._is_export() or _is_liquidacion():
+            Receptor['DirPostal'] = self.res_partner.direccion_postal or ''
+            Receptor['CmnaPostal'] = self.res_partner.comuna_postal or ''
+            Receptor['CiudadPostal'] = self.res_partner.ciudad_postal or ''
+        else:
+            Receptor['RUTRecep'] = self.format_vat(self.partner_id.vat)
+            Receptor['RznSocRecep'] = self._acortar_str(self.partner_id.name, 100)
         if not self._es_boleta():
             if not self.activity_description:
                 raise UserError(_('Seleccione giro del partner'))
@@ -900,8 +941,104 @@ www.sii.cl'''.format(folio, folio_inicial, folio_final)
         Receptor['CiudadRecep'] = self.partner_id.city
         return Receptor
 
+    def _transporte(self):
+        Transporte = collections.OrderedDict()
+        if self.patente:
+            Transporte['Patente'] = self.patente[:8]
+        elif self.vehicle:
+            Transporte['Patente'] = self.vehicle.matricula or ''
+        if self.transport_type in ['2','3'] and self.chofer:
+            if not self.chofer.vat:
+                raise UserError("Debe llenar los datos del chofer")
+            if self.transport_type == '2':
+                Transporte['RUTTrans'] = self.format_vat(self.company_id.vat)
+            else:
+                if not self.carrier_id.partner_id.vat:
+                    raise UserError("Debe especificar el RUT del transportista, en su ficha de partner")
+                Transporte['RUTTrans'] = self.format_vat(self.carrier_id.partner_id.vat)
+            if self.chofer:
+                Transporte['Chofer'] = collections.OrderedDict()
+                Transporte['Chofer']['RUTChofer'] = self.format_vat(self.chofer.vat)
+                Transporte['Chofer']['NombreChofer'] = self.chofer.name[:30]
+            '''if self._is_export():
+                Transporte['Aduana']['CodModVenta'] = self.account_invoice.modal_idad
+                Transporte['Aduana']['CodClauVenta'] = self.account_invoice.clau_sula
+                Transporte['Aduana']['TotClauVenta'] = self.account_invoice.total_clausule
+                Transporte['Aduana']['CodViaTransp'] = self.account_invoice.transportetipo
+                Transporte['Aduana']['NombreTransp'] = self.res_partner.name
+                Transporte['Aduana']['RUTCiaTransp'] = self.res_partner.rut
+                Transporte['Aduana']['NomCiaTransp'] = self.res_partner.name
+                Transporte['Aduana']['IdAdicTransp'] = self.account_invoice
+                Transporte['Aduana']['Booking'] = self.account_invoice.booking
+                Transporte['Aduana']['Operador'] = self.account_invoice
+                Transporte['Aduana']['CodPtoEmbarque'] = self.account_invoice
+                Transporte['Aduana']['IdAdicPtoEmb'] = self.account_invoice.puerto_embarque
+                Transporte['Aduana']['CodPtoDesemb'] = self.account_invoice.puerto_desembarque
+                Transporte['Aduana']['IdAdicPtoDesemb'] = self.account_invoice
+                Transporte['Aduana']['Tara'] = self.account_invoice
+                Transporte['Aduana']['CodUnidMedTara'] = self.account_invoice
+                Transporte['Aduana']['PesoBruto'] = self.account_invoice
+                Transporte['Aduana']['CodUnidPesoBruto'] = self.account_invoice
+                Transporte['Aduana']['PesoNeto'] = self.account_invoice
+                Transporte['Aduana']['CodUnidPesoNeto'] = self.account_invoice
+                Transporte['Aduana']['TotItems'] = self.account_invoice
+                Transporte['Aduana']['TotBultos'] = self.account_invoice
+                Transporte['Aduana']['MntFlete'] = self.account_invoice
+                Transporte['Aduana']['MntSeguro'] = self.account_invoice
+                Transporte['Aduana']['CodPaisRecep'] = self.res_country.iso_code 
+                Transporte['Aduana']['CodPaisDestin'] = self.res_country.iso_code'''            
+        Transporte['DirDest'] = (self.partner_id.street or '')+ ' '+ (self.partner_id.street2 or '')
+        Transporte['CmnaDest'] = self.partner_id.state_id.name or ''
+        Transporte['CiudadDest'] = self.partner_id.city or ''
+        #@TODO SUb Area Aduana
+        return Transporte
+
+    def _aduana(self):
+        Aduana = collections.OrderedDict()
+        if self._is_export():
+            Aduana['CodModVenta'] = self.account_invoice.modal_idad
+            Aduana['CodClauVenta'] = self.account_invoice.clau_sula
+            Aduana['TotClauVenta'] = self.account_invoice.total_clausule
+            Aduana['CodViaTransp'] = self.account_invoice.transporte_tipo
+            Aduana['NombreTransp'] = self.res_partner.name
+            Aduana['RUTCiaTransp'] = self.res_partner.rut
+            Aduana['NomCiaTransp'] = self.res_partner.name
+            Aduana['IdAdicTransp'] = self.res_partner.identificador_adicional_trans or ''
+            Aduana['Booking'] = self.account_invoice.booking
+            Aduana['Operador'] = self.res_partner.codigo_operador
+            Aduana['CodPtoEmbarque'] = self.account_invoice.puerto_embarque 
+            #Aduana['IdAdicPtoEmb'] = self.account_invoice.id_adic_embarque or ''
+            Aduana['CodPtoDesemb'] = self.account_invoice.puerto_desembarque
+            #Aduana['IdAdicPtoDesemb'] = self.account_invoice.id_adic_desembarque or ''
+            Aduana['Tara'] = self.account_invoice.tara
+            Aduana['CodUnidMedTara'] = self.account_invoice.tara_unit
+            Aduana['PesoBruto'] = self.account_invoice.weight
+            Aduana['CodUnidPesoBruto'] = self.account_invoice.weight_unit
+            Aduana['PesoNeto'] = self.account_invoice.neto
+            Aduana['CodUnidPesoNeto'] = self.account_invoice.net_weight_unit
+            Aduana['TotItems'] = self.account_invoice.tot_items
+            Aduana['TotBultos'] = self.account_invoice.tot_bultos
+            Aduana['MntFlete'] = self.account_invoice.monto_flete
+            Aduana['MntSeguro'] = self.account_invoice.monto_seguro
+            Aduana['CodPaisRecep'] = self.res_country.iso_code 
+            Aduana['CodPaisDestin'] = self.res_country.iso_code
+        return Aduana
+
+    def _bultos(self):
+        Bultos = colelctions.OrderedDict()
+        if self._is_export():
+            Bultos['CodTpoBultos'] = self.account_invoice.type_package
+            Bultos['CantBultos'] = self.account_invoice
+            Bultos['Marcas'] = self.account_invoice
+            Bultos['IdContainer'] = self.account_invoice
+            Bultos['Sello'] = self.account_invoice
+            Bultos['EmisorSello'] = self.account_invoice
+        return Bultos
+
     def _totales(self, MntExe=0, no_product=False, taxInclude=False):
         Totales = collections.OrderedDict()
+        if self._is_export():
+            Totales['TpoMoneda'] = self.moneda_export
         if self.sii_document_class_id.sii_code == 34 or (self.referencias and self.referencias[0].sii_referencia_TpoDocRef.sii_code == '34'):
             Totales['MntExe'] = int(round(self.amount_total, 0))
             if  no_product:
@@ -942,11 +1079,24 @@ www.sii.cl'''.format(folio, folio_inicial, folio_final)
         #Totales['VlrPagar']
         return Totales
 
+    def _otramoneda(self):
+        Otramoneda = collections.OrderedDict()
+        if self._is_export():
+            otramoneda['TpoMoneda'] = self.account_invoice.moneda_export
+            otramoneda['TpoCambio'] = self.account_invoice.tipo_cambio
+            otramoneda['MntExeOtrMnda'] = self.account_invoice.monto_exe_export
+            otramoneda['MntTotOtrMnda'] = self.account_invoice.total_export_moneda
+        return Otramoneda
+
+
     def _encabezado(self, MntExe=0, no_product=False, taxInclude=False):
         Encabezado = collections.OrderedDict()
         Encabezado['IdDoc'] = self._id_doc(taxInclude, MntExe)
         Encabezado['Emisor'] = self._emisor()
         Encabezado['Receptor'] = self._receptor()
+        if self._is_export():
+            Encabezado['Transporte'] = self._transporte()
+            Encabezado['Aduana'] = self._aduana()
         Encabezado['Totales'] = self._totales(MntExe, no_product)
         return Encabezado
 
@@ -1054,9 +1204,7 @@ www.sii.cl'''.format(folio, folio_inicial, folio_final)
             if line.discount > 0:
                 lines['DescuentoPct'] = line.discount
                 lines['DescuentoMonto'] = int(round((((line.discount / 100) * lines['PrcItem'])* qty)))
-            if not no_product and MntExe > 0:
-                lines['MontoItem'] = int(round(MntExe))
-            elif not no_product and not taxInclude:
+            if not no_product and not taxInclude:
                 lines['MontoItem'] = int(round(line.price_subtotal, 0))
             elif not no_product :
                 lines['MontoItem'] = int(round(line.price_tax_included,0))
@@ -1113,16 +1261,28 @@ www.sii.cl'''.format(folio, folio_inicial, folio_final)
         dte['TEDd'] = self.get_barcode(invoice_lines['no_product'])
         return dte
 
-    def _dte_to_xml(self, dte):
-        ted = dte['Documento ID']['TEDd']
-        dte['Documento ID']['TEDd'] = ''
+    def _dte_to_xml(self, dte, tpo_dte="Documento"):
+        ted = dte[tpo_dte + ' ID']['TEDd']
+        dte[(tpo_dte + ' ID')]['TEDd'] = ''
         xml = dicttoxml.dicttoxml(
             dte, root=False, attr_type=False) \
             .replace('<item>','').replace('</item>','')\
             .replace('<reflines>','').replace('</reflines>','')\
             .replace('<TEDd>','').replace('</TEDd>','')\
-            .replace('</Documento_ID>','\n'+ted+'\n</Documento_ID>')
+            .replace('</'+ tpo_dte + '_ID>','\n'+ted+'\n</'+ tpo_dte + '_ID>')
         return xml
+
+    def _tpo_dte(self):
+        tpo_dte = "Documento"
+        if self.sii_document_class_id.sii_code == 43:
+        	tpo_dte = 'Liquidacion'
+        if self.sii_document_class_id.sii_code == 110:
+            tpo_dte = 'Factura de Exportacion'
+        if self.sii_document_class_id.sii_code == 112:
+            tpo_dte = 'Nota de Credito Exportacion'
+        if self.sii_document_class_id.sii_code == 111:
+            tpo_dte = 'Nota de Debito Exportacion'
+        return tpo_dte
 
     def _timbrar(self, n_atencion=None):
         try:
@@ -1136,14 +1296,15 @@ www.sii.cl'''.format(folio, folio_inicial, folio_final)
         certp = signature_d['cert'].replace(
             BC, '').replace(EC, '').replace('\n', '')
         folio = self.get_folio()
-        dte = collections.OrderedDict()
+        tpo_dte = self._tpo_dte()
         doc_id_number = "F{}T{}".format(folio, self.sii_document_class_id.sii_code)
-        doc_id = '<Documento ID="{}">'.format(doc_id_number)
-        dte['Documento ID'] = self._dte(n_atencion)
-        xml = self._dte_to_xml(dte)
+        doc_id = '<' + tpo_dte + ' ID="{}">'.format(doc_id_number)
+        dte = collections.OrderedDict()
+        dte[(tpo_dte + ' ID')] = self._dte(n_atencion)
+        xml = self._dte_to_xml(dte, tpo_dte)
         root = etree.XML( xml )
         xml_pret = etree.tostring(root, pretty_print=True).replace(
-'<Documento_ID>', doc_id).replace('</Documento_ID>', '</Documento>')
+        '<' + tpo_dte + '_ID>', doc_id).replace('</' + tpo_dte + '_ID>', '</' + tpo_dte + '>')
         envelope_efact = self.convert_encoding(xml_pret, 'ISO-8859-1')
         envelope_efact = self.create_template_doc(envelope_efact)
         type = 'doc'
@@ -1161,6 +1322,7 @@ www.sii.cl'''.format(folio, folio_inicial, folio_final)
         clases = {}
         company_id = False
         es_boleta = False
+        #is_export = False
         batch = 0
         for inv in self.with_context(lang='es_CL'):
             if not inv.sii_batch_number or inv.sii_batch_number == 0:
