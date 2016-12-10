@@ -855,14 +855,14 @@ www.sii.cl'''.format(folio, folio_inicial, folio_final)
         if self._is_export():
             IdDoc['TipoDespacho'] = self.despacho_tipo or ''
             IdDoc['IndServicio']  = self.es_servicio or 3
-            IdDoc['FmaPagExp'] = self.forma_de_pago_export
+            IdDoc['FmaPagExp'] = self.pago_export
             IdDoc['FchCancel'] = self.fecha_cancelacion or ''
             IdDoc['MntCancel'] = self.monto_cancelado or ''
             IdDoc['SaldoInsol'] = self.saldo_insoluto or ''
-            IdDoc['MntPagos'] = collections.OrderedDict()    #Ésto se supone que es una tabla dentro de IdDoc
-            IdDoc['MntPagos']['FchPago'] = self.fecha_pago or ''   #Pertenece tabla
-            IdDoc['MntPagos']['MntPago'] = self.monto_pago or ''     #Pertenece tabla
-            IdDoc['MntPagos']['GlosaPagos'] = self.glosa or ''  #Pertenece tabla
+            #IdDoc['MntPagos'] = collections.OrderedDict()    #Ésto se supone que es una tabla dentro de IdDoc
+            #IdDoc['MntPagos']['FchPago'] = self.fecha_pago or ''   #Pertenece tabla
+            #IdDoc['MntPagos']['MntPago'] = self.monto_pago or ''     #Pertenece tabla
+            #IdDoc['MntPagos']['GlosaPagos'] = self.glosa or ''  #Pertenece tabla
             IdDoc['PeriodoDesde'] = self.periodo_desde or ''
             IdDoc['PeriodoHasta'] = self.periodo_hasta or ''
             IdDoc['MedioPago'] = self.medio_pago or ''
